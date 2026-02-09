@@ -1,0 +1,105 @@
+#define sensorPin A2  
+#define buzzerPin 13  
+#define keylockPin 11
+
+// ПОРЯДОК ВАЖЕН! Сначала калибруем, потом устанавливаем порог
+int baseline = 0;    // Значение при освещении лазером
+int threshold = 0;   // Порог срабатывания (70% от baseline)
+
+bool alarmActive = false;
+
+void setup() {
+  pinMode(keylockPin, INPUT_PULLUP);
+  pinMode(buzzerPin, OUTPUT);
+  Serial.begin(115200);
+  
+  Serial.println("=== КАЛИБРОВКА ===");
+  Serial.println("1. Направьте лазер на датчик");
+  Serial.println("2. Убедитесь, что луч не прерывается");
+  Serial.println("3. Ждите 3 секунды...");
+  
+  delay(3000);
+  
+  // Измеряем базовый уровень (при освещении лазером)
+  long sum = 0;
+  for(int i = 0; i < 20; i++) {
+    sum += analogRead(sensorPin);
+    delay(100);
+  }
+  baseline = sum / 20;
+  
+  // Устанавливаем порог (30% ниже базового уровня)
+  threshold = baseline * 0.7;
+  
+  Serial.print("Базовый уровень (лазер направлен): ");
+  Serial.println(baseline);
+  Serial.print("Порог срабатывания: ");
+  Serial.println(threshold);
+  Serial.println("=== СИГНАЛИЗАЦИЯ ГОТОВА ===");
+  Serial.println("Разомкните ключ для включения охраны");
+}
+
+void loop() {  
+  // Пока ключ РАЗОМКНУТ - охраняем
+  while (digitalRead(keylockPin) == HIGH) { 
+    senseIntruder(); 
+  }
+  
+  // Ключ ЗАМКНУТ - выключаем
+  noTone(buzzerPin);
+  alarmActive = false;
+  Serial.println("Охрана выключена");
+  delay(100);
+}
+
+void senseIntruder() {
+  int sensorValue = analogRead(sensorPin);
+  
+  // Отладка (раз в секунду)
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 1000) {
+    Serial.print("Датчик: ");
+    Serial.print(sensorValue);
+    Serial.print(" / Порог: ");
+    Serial.print(threshold);
+    Serial.print(" / Базовый: ");
+    Serial.println(baseline);
+    lastPrint = millis();
+  }
+  
+  // Проверяем прерывание луча
+  // Если значение УПАЛО ниже порога (луч перекрыт)
+  if (sensorValue < threshold) {
+    if (!alarmActive) {
+      Serial.println("!!! ТРЕВОГА !!! Луч прерван!");
+      triggerAlarm();
+      alarmActive = true;
+    }
+  } else {
+    alarmActive = false;
+  }
+  
+  delay(50);
+}
+
+void triggerAlarm() {
+  Serial.println("Сирена!");
+  
+  // Включаем сирену на 5 секунд
+  unsigned long alarmStart = millis();
+  
+  while(millis() - alarmStart < 5000) {
+    // Проверяем, не выключили ли ключом
+    if(digitalRead(keylockPin) == LOW) {
+      break;
+    }
+    
+    // Чередуем два тона (сирена)
+    tone(buzzerPin, 1000, 200);
+    delay(300);
+    tone(buzzerPin, 800, 200);
+    delay(300);
+  }
+  
+  noTone(buzzerPin);
+}
